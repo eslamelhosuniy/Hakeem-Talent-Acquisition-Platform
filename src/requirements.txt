@@ -1,0 +1,15 @@
+# Core
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+
+# LLM
+openai
+
+# Vector DB
+qdrant-client
+
+# Database
+sqlalchemy
+asyncpg
