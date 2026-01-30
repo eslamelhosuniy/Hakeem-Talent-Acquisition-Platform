@@ -9,8 +9,6 @@ def parse_cv(raw_text, lang="en"):
         "email": extract_email(text),
         "phone": extract_phone(text),
         "gender": extract_gender(text),
-        "degree": extract_degree(text),
-        "years": extract_years(text),
-        "skills": extract_skills(text),  
+        "degree": extract_degree(text), 
         "clean_text": text
     }
