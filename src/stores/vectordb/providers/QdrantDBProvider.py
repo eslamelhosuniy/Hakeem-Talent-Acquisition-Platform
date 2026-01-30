@@ -1,18 +1,242 @@
-from ..VectorDBInterface import VectorDBInterface
+from qdrant_client import models, QdrantClient
+from ..VectorDBInterface import VectorDBInterface, RetrievedDocument
+import logging
+from typing import List
+
+
+class DistanceMethodEnums:
+    COSINE = "cosine"
+    DOT = "dot"
 
 
 class QdrantDBProvider(VectorDBInterface):
-    def __init__(self, db_path: str):
+
+    def __init__(self, db_path: str, distance_method: str):
+        self.client = None
         self.db_path = db_path
+        self.distance_method = None
+
+        if distance_method == DistanceMethodEnums.COSINE:
+            self.distance_method = models.Distance.COSINE
+        elif distance_method == DistanceMethodEnums.DOT:
+            self.distance_method = models.Distance.DOT
+
+        self.logger = logging.getLogger(__name__)
 
     def connect(self):
-        # TODO: Implement
-        pass
+        self.client = QdrantClient(path=self.db_path)
 
-    def insert_many(self, collection_name: str, texts: list, vectors: list):
-        # TODO: Implement
-        pass
+    def disconnect(self):
+        self.client = None
 
-    def search_by_vector(self, collection_name: str, vector: list, limit: int):
-        # TODO: Implement
-        pass
+    def is_collection_existed(self, collection_name: str) -> bool:
+        return self.client.collection_exists(collection_name=collection_name)
+
+    def list_all_collections(self) -> List:
+        return self.client.get_collections()
+
+    def get_collection_info(self, collection_name: str) -> dict:
+        return self.client.get_collection(collection_name=collection_name)
+
+    def delete_collection(self, collection_name: str):
+        if self.is_collection_existed(collection_name):
+            return self.client.delete_collection(collection_name=collection_name)
+
+    def create_collection(
+        self, collection_name: str, embedding_size: int, do_reset: bool = False
+    ):
+        if do_reset:
+            _ = self.delete_collection(collection_name=collection_name)
+
+        if not self.is_collection_existed(collection_name):
+            _ = self.client.create_collection(
+                collection_name=collection_name,
+                vectors_config=models.VectorParams(
+                    size=embedding_size, distance=self.distance_method
+                ),
+            )
+            return True
+
+        return False
+
+    def insert_one(
+        self,
+        collection_name: str,
+        text: str,
+        vector: list,
+        metadata: dict = None,
+        record_id: str = None,
+    ):
+        if not self.is_collection_existed(collection_name):
+            self.logger.error(
+                f"Cannot insert record to non-existed collection: {collection_name}"
+            )
+            return False
+
+        try:
+            _ = self.client.upload_records(
+                collection_name=collection_name,
+                records=[
+                    models.Record(
+                        id=record_id,
+                        vector=vector,
+                        payload={"text": text, "metadata": metadata},
+                    )
+                ],
+            )
+        except Exception as e:
+            self.logger.error(f"Error while inserting: {e}")
+            return False
+
+        return True
+
+    def insert_many(
+        self,
+        collection_name: str,
+        texts: list,
+        vectors: list,
+        metadata: list = None,
+        record_ids: list = None,
+        batch_size: int = 50,
+    ):
+        if metadata is None:
+            metadata = [None] * len(texts)
+
+        if record_ids is None:
+            record_ids = list(range(0, len(texts)))
+
+        for i in range(0, len(texts), batch_size):
+            batch_end = i + batch_size
+
+            batch_texts = texts[i:batch_end]
+            batch_vectors = vectors[i:batch_end]
+            batch_metadata = metadata[i:batch_end]
+            batch_record_ids = record_ids[i:batch_end]
+
+            batch_records = [
+                models.Record(
+                    id=batch_record_ids[x],
+                    vector=batch_vectors[x],
+                    payload={"text": batch_texts[x], "metadata": batch_metadata[x]},
+                )
+                for x in range(len(batch_texts))
+            ]
+
+            try:
+                _ = self.client.upload_records(
+                    collection_name=collection_name,
+                    records=batch_records,
+                )
+            except Exception as e:
+                self.logger.error(f"Error while inserting batch: {e}")
+                return False
+
+        return True
+
+    def search_by_vector(
+        self, collection_name: str, vector: list, limit: int = 5
+    ) -> List[RetrievedDocument]:
+        results = self.client.search(
+            collection_name=collection_name,
+            query_vector=vector,
+            limit=limit,
+            query_filter=None,
+        )
+
+        if not results or len(results) == 0:
+            return None
+
+        return [
+            RetrievedDocument(
+                id=str(result.id),
+                score=result.score,
+                text=result.payload.get("text"),
+                metadata=result.payload.get("metadata"),
+            )
+            for result in results
+        ]
+
+    def search_by_vector_with_filter(
+        self, collection_name: str, vector: list, limit: int = 5, tags: list = None
+    ) -> List[RetrievedDocument]:
+        query_filter = None
+        if tags and len(tags) > 0:
+            query_filter = models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="metadata.tags", match=models.MatchAny(any=tags)
+                    )
+                ]
+            )
+
+        results = self.client.search(
+            collection_name=collection_name,
+            query_vector=vector,
+            limit=limit,
+            query_filter=query_filter,
+        )
+
+        if not results or len(results) == 0:
+            return None
+
+        return [
+            RetrievedDocument(
+                id=str(result.id),
+                score=result.score,
+                text=result.payload.get("text"),
+                metadata=result.payload.get("metadata"),
+            )
+            for result in results
+        ]
+
+    def delete_by_tags(self, collection_name: str, tags: list) -> int:
+        """Delete records that match tags"""
+        if not self.is_collection_existed(collection_name):
+            return 0
+
+        if not tags or len(tags) == 0:
+            return 0
+
+        tags_key = "|".join(sorted(tags))
+
+        try:
+            result = self.client.delete(
+                collection_name=collection_name,
+                points_selector=models.FilterSelector(
+                    filter=models.Filter(
+                        must=[
+                            models.FieldCondition(
+                                key="metadata.tags_key",
+                                match=models.MatchValue(value=tags_key),
+                            )
+                        ]
+                    )
+                ),
+            )
+            return 1 if result else 0
+        except Exception as e:
+            self.logger.error(f"Error while deleting by tags: {e}")
+            return 0
+
+    def count(self, collection_name: str, tags: list = None) -> int:
+        if not self.is_collection_existed(collection_name):
+            return 0
+
+        query_filter = None
+        if tags and len(tags) > 0:
+            query_filter = models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="metadata.tags", match=models.MatchAny(any=tags)
+                    )
+                ]
+            )
+
+        try:
+            count_result = self.client.count(
+                collection_name=collection_name, count_filter=query_filter
+            )
+            return count_result.count
+        except Exception as e:
+            self.logger.error(f"Error counting collection: {e}")
+            return 0
