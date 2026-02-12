@@ -6,6 +6,8 @@ from stores.vectordb.VectorDBProviderFactory import VectorDBProviderFactory
 from stores.llm.templates.template_parser import TemplateParser
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
+from routes.cv_routes import router as cv_router
+
 
 app = FastAPI(
     title="AI Talent Platform",
@@ -67,3 +69,5 @@ app.on_event("shutdown")(shutdown_span)
 # Routes
 app.include_router(base.main_router)
 app.include_router(base.base_router)
+app.include_router(cv_router)
+
