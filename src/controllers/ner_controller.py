@@ -5,11 +5,8 @@ import re
 class NERController:
 
     def __init__(self):
-        # English model
-        self.en_nlp = spacy.load("en_core_web_sm")
-
-        # Multilingual model (supports Arabic partially)
-        self.multi_nlp = spacy.load("xx_ent_wiki_sm")
+        # Multilingual model (English + Arabic)
+        self.nlp = spacy.load("xx_ent_wiki_sm")
 
     # -----------------------
     # Detect Arabic
@@ -54,12 +51,10 @@ class NERController:
     # -----------------------
     def extract_entities(self, text: str):
 
-        if self._is_arabic(text):
-            doc = self.multi_nlp(text)
-            language = "ar"
-        else:
-            doc = self.en_nlp(text)
-            language = "en"
+        doc = self.nlp(text)
+
+        # Detect language just for response
+        language = "ar" if self._is_arabic(text) else "en"
 
         entities = {}
 
