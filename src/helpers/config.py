@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     DEFAULT_LANG: str = "en"
 
     class Config:
-        env_file = ".env"
+        env_file = ".env.example"
 
 
 @lru_cache()
