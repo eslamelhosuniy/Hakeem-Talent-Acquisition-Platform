@@ -1,0 +1,10 @@
+Senior Backend Engineer with 7+ years of experience designing and building scalable microservices.
+
+Strong background in Node.js, TypeScript, and Python, with production experience on AWS using Docker and Kubernetes.
+Designed and maintained REST APIs and GraphQL services, integrating PostgreSQL, Redis, and Elasticsearch.
+
+Implemented CI/CD pipelines with GitHub Actions and Terraform for infrastructure-as-code.
+Worked closely with data engineering teams using Kafka, Spark, and Snowflake for analytics workloads.
+
+Comfortable with modern frontend stacks (React, Next.js, Tailwind CSS) for internal tools and dashboards.
+
