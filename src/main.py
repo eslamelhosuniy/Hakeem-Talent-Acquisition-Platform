@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from routes.cv_routes import router as cv_router
 from routes.ner_routes import router as ner_router
 from fastapi.middleware.cors import CORSMiddleware
-
+from routes.skill_routes import router as skill_router
 
 app = FastAPI(
     title="AI Talent Platform",
@@ -80,3 +80,4 @@ app.include_router(base.main_router)
 app.include_router(base.base_router)
 app.include_router(cv_router)
 app.include_router(ner_router)
+app.include_router(skill_router)
