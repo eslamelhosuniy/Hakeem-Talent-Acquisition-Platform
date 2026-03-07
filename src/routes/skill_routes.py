@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from controllers.skill_matching_controller import skill_match_controller
+from controllers.skill_matching_ import skill_match_controller
 
 router = APIRouter(prefix="/skills", tags=["Skill Matching"])
 
