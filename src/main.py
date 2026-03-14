@@ -11,6 +11,7 @@ from routes.ner import router as ner_router
 from fastapi.middleware.cors import CORSMiddleware
 from routes.skill import router as skill_router
 from routes.text_extraction import router as text_extraction_router
+from routes.data_routes import router as data_router
 
 app = FastAPI(
     title="AI Talent Platform",
@@ -25,6 +26,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 async def startup_span():
     settings = get_settings()
@@ -84,3 +86,4 @@ app.include_router(cv_router)
 app.include_router(ner_router)
 app.include_router(skill_router)
 app.include_router(text_extraction_router)
+app.include_router(data_router)
