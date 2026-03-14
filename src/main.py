@@ -6,10 +6,11 @@ from stores.vectordb.VectorDBProviderFactory import VectorDBProviderFactory
 from stores.llm.templates.template_parser import TemplateParser
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from routes.cv_routes import router as cv_router
-from routes.ner_routes import router as ner_router
+from routes.cv import router as cv_router
+from routes.ner import router as ner_router
 from fastapi.middleware.cors import CORSMiddleware
-from routes.skill_routes import router as skill_router
+from routes.skill import router as skill_router
+from routes.text_extraction import router as text_extraction_router
 
 app = FastAPI(
     title="AI Talent Platform",
@@ -28,37 +29,38 @@ app.add_middleware(
 async def startup_span():
     settings = get_settings()
 
-    # # PostgreSQL connection
-    # postgres_conn = f"postgresql+asyncpg://{settings.POSTGRES_USERNAME}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_MAIN_DATABASE}"
+    # PostgreSQL connection
+    postgres_conn = f"postgresql+asyncpg://{settings.POSTGRES_USERNAME}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_MAIN_DATABASE}"
 
-    # app.db_engine = create_async_engine(postgres_conn)
-    # app.db_client = sessionmaker(
-    #     app.db_engine, class_=AsyncSession, expire_on_commit=False
-    # )
+    app.db_engine = create_async_engine(postgres_conn)
+    app.db_client = sessionmaker(
+        app.db_engine, class_=AsyncSession, expire_on_commit=False
+    )
 
-    # llm_provider_factory = LLMProviderFactory(settings)
-    # vectordb_provider_factory = VectorDBProviderFactory(settings)
+    llm_provider_factory = LLMProviderFactory(settings)
+    vectordb_provider_factory = VectorDBProviderFactory(settings)
 
-    # # Generation client (for resume analysis, job matching, NLP)
-    # app.generation_client = llm_provider_factory.create(
-    #     provider=settings.GENERATION_BACKEND
-    # )
-    # app.generation_client.set_generation_model(model_id=settings.GENERATION_MODEL_ID)
+    # Generation client (for resume analysis, job matching, NLP)
+    app.generation_client = llm_provider_factory.create(
+        provider=settings.GENERATION_BACKEND
+    )
+    app.generation_client.set_generation_model(model_id=settings.GENERATION_MODEL_ID)
 
-    # # Embedding client (for semantic search)
-    # app.embedding_client = llm_provider_factory.create(
-    #     provider=settings.EMBEDDING_BACKEND
-    # )
-    # app.embedding_client.set_embedding_model(
-    #     model_id=settings.EMBEDDING_MODEL_ID,
-    #     embedding_size=settings.EMBEDDING_MODEL_SIZE,
-    # )
+    # Embedding client (for semantic search)
+    app.embedding_client = llm_provider_factory.create(
+        provider=settings.EMBEDDING_BACKEND
+    )
+    app.embedding_client.set_embedding_model(
+        model_id=settings.EMBEDDING_MODEL_ID,
+        embedding_size=settings.EMBEDDING_MODEL_SIZE,
+    )
 
-    # # Vector DB client (for candidate/job search)
-    # app.vectordb_client = vectordb_provider_factory.create(
-    #     provider=settings.VECTOR_DB_BACKEND
-    # )
-    # app.vectordb_client.connect()
+    # Vector DB client (for candidate/job search)
+    # Ensure to pass embedding_client if necessary just like Karofa
+    app.vectordb_client = vectordb_provider_factory.create(
+        provider=settings.VECTOR_DB_BACKEND, embedding_client=app.embedding_client
+    )
+    app.vectordb_client.connect()
 
     # Template parser for prompts
     app.template_parser = TemplateParser(
@@ -68,8 +70,8 @@ async def startup_span():
 
 
 async def shutdown_span():
-    # await app.db_engine.dispose()
-    pass
+    await app.db_engine.dispose()
+    # app.vectordb_client.disconnect() # Assuming Karofa does the same
 
 
 app.on_event("startup")(startup_span)
@@ -81,3 +83,4 @@ app.include_router(base.base_router)
 app.include_router(cv_router)
 app.include_router(ner_router)
 app.include_router(skill_router)
+app.include_router(text_extraction_router)

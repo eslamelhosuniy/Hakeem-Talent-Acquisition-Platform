@@ -31,3 +31,7 @@ python-docx==1.1.0
 
 sentence-transformers==3.0.1
 rapidfuzz==3.9.6
+
+typer
+spacy==3.7.4
+xx_ent_wiki_sm @ https://github.com/explosion/spacy-models/releases/download/xx_ent_wiki_sm-3.7.0/xx_ent_wiki_sm-3.7.0-py3-none-any.whl
