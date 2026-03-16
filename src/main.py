@@ -58,7 +58,6 @@ async def startup_span():
     )
 
     # Vector DB client (for candidate/job search)
-    # Ensure to pass embedding_client if necessary just like Karofa
     app.vectordb_client = vectordb_provider_factory.create(
         provider=settings.VECTOR_DB_BACKEND, embedding_client=app.embedding_client
     )
@@ -73,7 +72,7 @@ async def startup_span():
 
 async def shutdown_span():
     await app.db_engine.dispose()
-    # app.vectordb_client.disconnect() # Assuming Karofa does the same
+    # app.vectordb_client.disconnect() 
 
 
 app.on_event("startup")(startup_span)

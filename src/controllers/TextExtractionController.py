@@ -3,7 +3,7 @@ from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_core.documents import Document
 import fitz  # PyMuPDF
 from PIL import Image
-import pytesseract
+# import pytesseract
 import numpy as np
 import cv2
 import base64
@@ -59,7 +59,7 @@ class TextExtractionController(BaseController):
 
         # Step 2: Try OCR with pytesseract
         logger.info(f"PDF has no extractable text, trying OCR: {pdf_path}")
-        ocr_pages = self._extract_with_ocr(pdf_path)
+        # ocr_pages = self._extract_with_ocr(pdf_path)
 
         if ocr_pages and any(len(p.strip()) > 50 for p in ocr_pages):
             logger.info(f"OCR extraction successful: {pdf_path}")
