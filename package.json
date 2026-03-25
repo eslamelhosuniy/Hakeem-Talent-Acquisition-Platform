@@ -1,0 +1,10 @@
+{
+  "name": "hakeem-talent-skill-match-tools",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lightweight Node scripts to exercise the resume skill matching API.",
+  "scripts": {
+    "test:skills": "node scripts/test_skill_match.js"
+  }
+}
+

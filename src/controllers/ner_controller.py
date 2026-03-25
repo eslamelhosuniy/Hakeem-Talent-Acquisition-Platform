@@ -5,8 +5,7 @@ import re
 class NERController:
 
     def __init__(self):
-        # Multilingual model (English + Arabic)
-        self.nlp = spacy.load("xx_ent_wiki_sm")
+        self.nlp = spacy.load("en_core_web_sm")
 
     # -----------------------
     # Detect Arabic
