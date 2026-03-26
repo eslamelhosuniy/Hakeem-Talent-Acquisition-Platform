@@ -1,104 +1,115 @@
 import os
 import re
 from fastapi import UploadFile
-from helpers.file_helper import generate_prefixed_filename
+from sqlalchemy import Column, Integer, String, create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 
-# تحديد المسار الرئيسي للمشروع
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# تحديد فولدر الحفظ: src/assets/files
-UPLOAD_FOLDER = os.path.join(BASE_DIR, "assets", "files")
+DB_PATH = os.path.join(BASE_DIR, "database.db")
 
-# التأكد أن الفولدر موجود، ولو مش موجود يكريته
+engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+
+class CVModel(Base):
+    __tablename__ = "cvs"
+  
+    id = Column(Integer, primary_key=True, index=True) 
+    job_title = Column(String)
+    cv_file = Column(String)
+
+Base.metadata.create_all(bind=engine)
+
+
+UPLOAD_FOLDER = os.path.join(BASE_DIR, "assets", "files")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 class DataController:
-    # القائمة اللي بتخزن البيانات في الذاكرة (Memory)
-    data_store = []
-    counter = 1
-
     @staticmethod
     async def create_cv(job_title: str, file: UploadFile):
-        # تنظيف اسم الملف من الحروف الغريبة
-        clean_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', file.filename)
-        filename = generate_prefixed_filename(clean_name)
-        filepath = os.path.join(UPLOAD_FOLDER, filename)
-        
-        # حفظ الملف فعلياً على الهارد
-        with open(filepath, "wb") as f:
-            content = await file.read()
-            f.write(content)
+        db = SessionLocal()
+        try:
+            from helpers.file_helper import generate_prefixed_filename
+            clean_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', file.filename)
+            filename = generate_prefixed_filename(clean_name)
+            filepath = os.path.join(UPLOAD_FOLDER, filename)
+            
+            with open(filepath, "wb") as f:
+                content = await file.read()
+                f.write(content)
 
-        record = {
-            "id": DataController.counter,
-            "job_title": job_title,
-            "cv_file": filename
-        }
-        DataController.data_store.append(record)
-        DataController.counter += 1
-        return record
+            new_cv = CVModel(job_title=job_title, cv_file=filename)
+            db.add(new_cv)
+            db.commit()
+            db.refresh(new_cv)
+            return new_cv
+        finally:
+            db.close()
 
     @staticmethod
-    async def update_cv(id: int, job_title: str, file: UploadFile = None):
-        for item in DataController.data_store:
-            if item["id"] == id:
-                if job_title:
-                    item["job_title"] = job_title
+    async def update_cv(id: int, job_title: str = None, file: UploadFile = None):
+        db = SessionLocal()
+        try:
+            item = db.query(CVModel).filter(CVModel.id == id).first()
+            if not item:
+                return {"error": "CV not found"}
 
-                if file:
-                    # 1. مسح الملف القديم قبل رفع الجديد لتوفير المساحة
-                    old_path = os.path.join(UPLOAD_FOLDER, item["cv_file"])
-                    if os.path.exists(old_path):
-                        os.remove(old_path)
+            if job_title:
+                item.job_title = job_title
 
-                    # 2. معالجة وحفظ الملف الجديد
-                    clean_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', file.filename)
-                    filename = generate_prefixed_filename(clean_name)
-                    filepath = os.path.join(UPLOAD_FOLDER, filename)
+            if file:
+               
+                old_path = os.path.join(UPLOAD_FOLDER, item.cv_file)
+                if os.path.exists(old_path):
+                    os.remove(old_path)
 
-                    with open(filepath, "wb") as f:
-                        content = await file.read()
-                        f.write(content)
+              
+                from helpers.file_helper import generate_prefixed_filename
+                clean_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', file.filename)
+                filename = generate_prefixed_filename(clean_name)
+                filepath = os.path.join(UPLOAD_FOLDER, filename)
+                with open(filepath, "wb") as f:
+                    content = await file.read()
+                    f.write(content)
+                item.cv_file = filename
 
-                    item["cv_file"] = filename
-
-                return item
-        return {"error": "CV not found"}
+            db.commit()
+            db.refresh(item)
+            return item
+        finally:
+            db.close()
 
     @staticmethod
     def get_all():
-        return DataController.data_store
+        db = SessionLocal()
+        try:
+            return db.query(CVModel).all()
+        finally:
+            db.close()
 
     @staticmethod
     def get_one(id: int):
-        for item in DataController.data_store:
-            if item["id"] == id:
-                return item
-        return None
+        db = SessionLocal()
+        try:
+            return db.query(CVModel).filter(CVModel.id == id).first()
+        finally:
+            db.close()
 
     @staticmethod
     def delete(id: int):
-      
-        target_index = -1
-        for i, item in enumerate(DataController.data_store):
-            if item["id"] == id:
-                target_index = i
-                break
-
-        if target_index != -1:
-          
-            filename = DataController.data_store[target_index]["cv_file"]
-            file_path = os.path.join(UPLOAD_FOLDER, filename)
-
-          
-            try:
+        db = SessionLocal()
+        try:
+            item = db.query(CVModel).filter(CVModel.id == id).first()
+            if item:
+                file_path = os.path.join(UPLOAD_FOLDER, item.cv_file)
                 if os.path.exists(file_path):
                     os.remove(file_path)
-            except Exception as e:
-                print(f"Error deleting file: {e}")
-
-            
-            DataController.data_store.pop(target_index)
-            
-            return {"message": f"CV with ID {id} and its file deleted successfully"}
-        
-        return {"error": "CV not found"}
+                db.delete(item)
+                db.commit()
+                return {"message": "Deleted successfully"}
+            return {"error": "CV not found"}
+        finally:
+            db.close()
