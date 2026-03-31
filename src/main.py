@@ -9,6 +9,8 @@ from sqlalchemy.orm import sessionmaker
 from routes.cv import router as cv_router
 from routes.ner import router as ner_router
 from fastapi.middleware.cors import CORSMiddleware
+from routes.analyze_routes import router as analyze_router
+from routes.match import router as match_router
 from routes.skill import router as skill_router
 from routes.text_extraction import router as text_extraction_router
 from routes.data_routes import router as data_router
@@ -81,8 +83,10 @@ app.on_event("shutdown")(shutdown_span)
 # Routes
 app.include_router(base.main_router)
 app.include_router(base.base_router)
+app.include_router(analyze_router)
 app.include_router(cv_router)
 app.include_router(ner_router)
 app.include_router(skill_router)
+app.include_router(match_router)
 app.include_router(text_extraction_router)
 app.include_router(data_router)

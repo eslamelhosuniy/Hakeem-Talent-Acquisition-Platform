@@ -1,5 +1,10 @@
+import logging
+
 from openai import OpenAI
 from ..LLMInterface import LLMInterface
+
+
+logger = logging.getLogger(__name__)
 
 
 class OpenAIProvider(LLMInterface):
@@ -21,7 +26,13 @@ class OpenAIProvider(LLMInterface):
         self.embedding_model_id = None
         self.embedding_size = None
 
-        self.client = OpenAI(api_key=self.api_key, base_url=self.api_url)
+        try:
+            self.client = OpenAI(api_key=self.api_key, base_url=self.api_url)
+        except Exception:
+            logger.exception(
+                "Failed to initialize OpenAI client. AI-powered features will fall back when possible."
+            )
+            self.client = None
 
     def set_generation_model(self, model_id: str):
         self.generation_model_id = model_id

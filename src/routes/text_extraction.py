@@ -1,6 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Request, status
 from fastapi.responses import JSONResponse
-from controllers.TextExtractionController import TextExtractionController
 from models.enums.ResponseEnums import ResponseSignal
 import shutil
 import os
@@ -22,6 +21,8 @@ async def extract_text_from_image(request: Request, file: UploadFile = File(...)
     os.makedirs("tmp", exist_ok=True)
 
     try:
+        from controllers.TextExtractionController import TextExtractionController
+
         with open(temp_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 

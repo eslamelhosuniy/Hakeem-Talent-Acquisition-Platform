@@ -17,3 +17,7 @@ class ResponseSignal(Enum):
     # Skill Matching
     SKILL_MATCHING_SUCCESS = "skill_matching_success"
     SKILL_MATCHING_ERROR = "skill_matching_error"
+
+    # Analysis
+    ANALYSIS_SUCCESS = "analysis_success"
+    ANALYSIS_ERROR = "analysis_error"
