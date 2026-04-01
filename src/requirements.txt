@@ -41,3 +41,8 @@ torch==2.1.0+cpu
 
 
 langchain-community
+
+
+ en_core_web_lg==3.7.1
+  camel-tools== 1.5.7
+  camel_data -i all

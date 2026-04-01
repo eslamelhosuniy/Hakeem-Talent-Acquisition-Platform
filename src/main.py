@@ -1,4 +1,8 @@
+import os
+from dotenv import load_dotenv 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+load_dotenv() 
 from routes import base
 from helpers.config import get_settings
 from stores.llm.LLMProviderFactory import LLMProviderFactory
@@ -8,7 +12,6 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from routes.cv import router as cv_router
 from routes.ner import router as ner_router
-from fastapi.middleware.cors import CORSMiddleware
 from routes.analyze_routes import router as analyze_router
 from routes.match import router as match_router
 from routes.skill import router as skill_router

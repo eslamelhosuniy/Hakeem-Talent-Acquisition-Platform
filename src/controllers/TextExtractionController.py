@@ -1,15 +1,18 @@
-from .BaseController import BaseController
-from langchain_community.document_loaders import PyMuPDFLoader
-from langchain_core.documents import Document
-import fitz  # PyMuPDF
-from PIL import Image
-# import pytesseract
-import numpy as np
-import cv2
-import base64
 import os
 import io
+import base64
 import logging
+import cv2
+import numpy as np
+import fitz  # PyMuPDF
+from PIL import Image
+from dotenv import load_dotenv
+from langchain_community.document_loaders import PyMuPDFLoader
+from langchain_core.documents import Document
+from .BaseController import BaseController
+
+# تحميل البيئة لضمان قراءة المفاتيح
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +22,7 @@ class TextExtractionController(BaseController):
     Text extraction controller with fallback strategy:
     1. PyMuPDFLoader - for text-based PDFs
     2. pytesseract OCR - for scanned PDFs
-    3. qwen3-vl-plus VLM - for complex/failed cases
+    3. gpt-4o/gpt-4o-mini VLM - for complex/failed cases
     """
 
     def __init__(self, generation_client=None, template_parser=None):
@@ -51,7 +54,6 @@ class TextExtractionController(BaseController):
         return images
 
     def extract_pdf(self, pdf_path: str):
-
         # Step 1: Try PyMuPDFLoader
         if self._has_extractable_text(pdf_path):
             logger.info(f"PDF has extractable text, using PyMuPDFLoader: {pdf_path}")
@@ -59,13 +61,13 @@ class TextExtractionController(BaseController):
 
         # Step 2: Try OCR with pytesseract
         logger.info(f"PDF has no extractable text, trying OCR: {pdf_path}")
-        # ocr_pages = self._extract_with_ocr(pdf_path)
+        ocr_pages = self._extract_with_ocr(pdf_path)
 
         if ocr_pages and any(len(p.strip()) > 50 for p in ocr_pages):
             logger.info(f"OCR extraction successful: {pdf_path}")
             return OCRDocumentLoader(pdf_path, ocr_pages, extraction_method="ocr")
 
-        # Step 3: Try VLM
+        # Step 3: Try VLM (OpenAI)
         if self.generation_client:
             logger.info(f"OCR failed, trying VLM extraction: {pdf_path}")
             vlm_pages = self._extract_with_vlm(pdf_path)
@@ -93,6 +95,7 @@ class TextExtractionController(BaseController):
     def _extract_with_ocr(self, pdf_path: str) -> list:
         """Extract text using pytesseract OCR. Returns list of page texts."""
         try:
+            import pytesseract
             pages = self._pdf_to_images(pdf_path, dpi=300)
             pages_text = []
 
@@ -104,7 +107,6 @@ class TextExtractionController(BaseController):
                 pages_text.append(page_text)
 
             return pages_text
-
         except Exception as e:
             logger.error(f"OCR extraction failed: {e}")
             return []
@@ -129,12 +131,12 @@ class TextExtractionController(BaseController):
             system_prompt = "أنت مساعد متخصص في استخراج النص من المستندات. قم باستخراج كل النص المرئي في الصورة بدقة."
             if self.template_parser:
                 try:
-                    system_prompt = self.template_parser.get(
-                        "text_extraction", "system_prompt"
-                    )
+                    system_prompt = self.template_parser.get("text_extraction", "system_prompt")
                 except:
                     pass
 
+            # سحب الموديل من الـ .env
+            model_id = os.getenv("GENERATION_MODEL_ID", "gpt-4o-mini")
             client = self.generation_client.client
             pages_text = []
 
@@ -144,7 +146,7 @@ class TextExtractionController(BaseController):
                 encoded_string = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
                 response = client.chat.completions.create(
-                    model="qwen3-vl-plus",
+                    model=model_id,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {
@@ -152,20 +154,18 @@ class TextExtractionController(BaseController):
                             "content": [
                                 {
                                     "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:image/jpeg;base64,{encoded_string}"
-                                    },
+                                    "image_url": {"url": f"data:image/jpeg;base64,{encoded_string}"}
                                 },
                                 {
                                     "type": "text",
-                                    "text": "استخرج كل النص الموجود في هذه الصورة.",
+                                    "text": "استخرج كل النص الموجود في هذه الصورة باللغة العربية والإنجليزية بدقة."
                                 },
                             ],
                         },
                     ],
                 )
 
-                if response and response.choices and response.choices[0].message:
+                if response and response.choices:
                     page_text = response.choices[0].message.content
                     pages_text.append(page_text)
                 else:
@@ -174,21 +174,20 @@ class TextExtractionController(BaseController):
             return pages_text
 
         except Exception as e:
-            logger.error(f"VLM extraction failed: {e}")
+            logger.error(f"VLM extraction failed for PDF: {e}")
             return []
 
     def extract_image(self, file_path: str):
-        """
-        Extract text from an image file using VLM and return as OCRDocumentLoader.
-        """
+        """Extract text from an image file using VLM and return as OCRDocumentLoader."""
         try:
             logger.info(f"Extracting text from image: {file_path}")
-            text = self.extract_text(file_path)
+            text = self.extract_text(file_path, self.generation_client, self.template_parser)
             
-            if text:
+            if text and len(text.strip()) > 5:
                 return OCRDocumentLoader(file_path, [text], extraction_method="vlm_image")
             
-            # Fallback to Tesseract if VLM returned nothing
+            # Fallback to Tesseract
+            import pytesseract
             logger.warning(f"VLM returned no text for image, trying OCR: {file_path}")
             img = Image.open(file_path)
             cleaned_img = self._clean_image_for_ocr(img)
@@ -200,91 +199,73 @@ class TextExtractionController(BaseController):
             logger.error(f"Error in extract_image: {e}")
             return OCRDocumentLoader(file_path, [""], extraction_method="failed_image")
 
-    def extract_text(self, file_path: str) -> str:
-        """
-        Extract text from an image file using VLM.
-        Used by /api/v1/text-generation/extract endpoint.
-        """
+    @classmethod
+    def extract_text(cls, file_path: str, generation_client=None, template_parser=None) -> str:
+        """Extract text from an image file using VLM (Class method used by endpoints)."""
+        instance = cls(generation_client=generation_client, template_parser=template_parser) 
+        
+        # قراءة الموديل والـ Key مباشرة من الـ ENV لضمان أحدث قيمة
+        model_id = os.getenv("GENERATION_MODEL_ID", "gpt-4o-mini")
+        api_key = os.getenv("OPENAI_API_KEY")
+
         try:
-            # Validation
-            if self.app_settings.IMAGE_MAX_SIZE:
-                file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
-                if file_size_mb > self.app_settings.IMAGE_MAX_SIZE:
-                    raise ValueError(
-                        f"File size exceeds limit of {self.app_settings.IMAGE_MAX_SIZE} MB"
-                    )
+            # 1. التحقق من وجود الـ client والـ API Key
+            if not instance.generation_client or not api_key or "your_actual" in api_key:
+                logger.error("[VLM] API Key missing or invalid, falling back to local extraction")
+                doc = fitz.open(file_path)
+                return " ".join([page.get_text() for page in doc])
 
-            if self.app_settings.IMAGE_ALLOWED_TYPES:
-                import mimetypes
-
-                mime_type, _ = mimetypes.guess_type(file_path)
-                if mime_type and mime_type not in self.app_settings.IMAGE_ALLOWED_TYPES:
-                    raise ValueError(
-                        f"File type {mime_type} not allowed. Allowed: {self.app_settings.IMAGE_ALLOWED_TYPES}"
-                    )
-
-            # Read and encode image
+            # 2. Read and encode image
             with open(file_path, "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
 
-            # Get system prompt
+            # 3. System Prompt
             system_prompt = "أنت مساعد متخصص في استخراج النص من الصور."
-            if self.template_parser:
+            if instance.template_parser:
                 try:
-                    system_prompt = self.template_parser.get(
-                        "text_extraction", "system_prompt"
-                    )
+                    system_prompt = instance.template_parser.get("text_extraction", "system_prompt")
                 except:
                     pass
 
-            # Call VLM
-            if not self.generation_client or not hasattr(self.generation_client, "client"):
-                logger.error("[TextExtraction] generation_client or its base client is missing")
-                return None
-
-            client = self.generation_client.client
+            # 4. Call VLM
+            client = instance.generation_client.client
+            logger.info(f"Calling VLM ({model_id}) for file: {file_path}")
+            
             response = client.chat.completions.create(
-                model="qwen3-vl-plus",
+                model=model_id,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {
                         "role": "user",
                         "content": [
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{encoded_string}"
-                                },
-                            },
-                            {
-                                "type": "text",
-                                "text": "استخرج كل النص الموجود في هذه الصورة.",
-                            },
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded_string}"}},
+                            {"type": "text", "text": "استخرج كل النص الموجود في هذه الصورة بدقة عالية."},
                         ],
                     },
                 ],
             )
 
-            if response and response.choices and response.choices[0].message:
-                return response.choices[0].message.content
-
-            return None
+            extracted_text = response.choices[0].message.content if response else None
+            return extracted_text
 
         except Exception as e:
-            logger.error(f"Error in text extraction: {e}")
-            return None
+            # معالجة ذكية للخطأ 401 (الرصيد أو المفتاح)
+            if "401" in str(e):
+                logger.error(f"VLM Auth Error (401): Check your OpenAI Balance/Key. Falling back to local.")
+            else:
+                logger.error(f"VLM Error: {e}. Falling back to local.")
+                
+            try:
+                # Fallback to PyMuPDF (Fitz)
+                doc = fitz.open(file_path)
+                text = " ".join([page.get_text() for page in doc])
+                return text if text.strip() else "Extraction failed. Please check file quality."
+            except:
+                return None
 
 
 class OCRDocumentLoader:
-    """
-    LangChain-compatible document loader for OCR/VLM-extracted text.
-    Implements the same interface as PyMuPDFLoader.
-    Returns list of Documents, one per page with proper metadata.
-    """
-
-    def __init__(
-        self, file_path: str, pages_text: list, extraction_method: str = "ocr"
-    ):
+    def __init__(self, file_path: str, pages_text: list, extraction_method: str = "ocr"):
         self.file_path = file_path
         self.pages_text = pages_text
         self.extraction_method = extraction_method

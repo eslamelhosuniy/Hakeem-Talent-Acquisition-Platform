@@ -1,13 +1,12 @@
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
+# تحديد المسارات (نفس المنطق بتاعك بس بنأكده)
 SRC_DIR = Path(__file__).resolve().parent.parent
 ROOT_DIR = SRC_DIR.parent
-
 
 class Settings(BaseSettings):
     APP_NAME: str = "AI Talent Platform"
@@ -26,6 +25,7 @@ class Settings(BaseSettings):
     GENERATION_BACKEND: str = "OPENAI"
     EMBEDDING_BACKEND: str = "OPENAI"
 
+    # جعل الحقول إلزامية عند التشغيل لضمان عدم نسيان الـ Key
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_API_URL: Optional[str] = "https://api.openai.com/v1"
     USE_AI_EXPLANATION: bool = False
@@ -44,12 +44,18 @@ class Settings(BaseSettings):
     PRIMARY_LANG: str = "en"
     DEFAULT_LANG: str = "en"
 
+    # --- التعديل هنا ---
     model_config = SettingsConfigDict(
-        env_file=(ROOT_DIR / ".env", SRC_DIR / ".env.example"),
+        # الأولوية لملف .env الموجود في الـ Root
+        # لو ملقاش الـ .env هيدور في البيئة (System Environment)
+        env_file=".env", 
+        env_file_encoding="utf-8",
         extra="ignore",
     )
 
-
 @lru_cache()
 def get_settings():
+    # التأكد من تحميل البيئة قبل قراءة الكلاس (زيادة أمان)
+    from dotenv import load_dotenv
+    load_dotenv()
     return Settings()

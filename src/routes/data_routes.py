@@ -1,56 +1,57 @@
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from controllers.data_controller import DataController
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status, Request
+from typing import List, Optional
+try:
+    from controllers.data_controller import DataController
+except ImportError:
+    from src.controllers.data_controller import DataController
 
 router = APIRouter(
-    prefix="/data",
-    tags=["CV Data"]
+    prefix="/cvs",
+    tags=["CV Management"]
 )
 
- 
-@router.post("/create")
+
+@router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_cv(
-    job_title: str = Form(...),
-    cv: UploadFile = File(...)
+    request: Request,
+    job_title: str = Form(...,),
+    file: UploadFile = File(..., )
 ):
+   
+    try:
+    
+        return await DataController.create_cv(request=request, job_title=job_title, file=file)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"حدث خطأ أثناء الرفع: {str(e)}")
 
-    return await DataController.create_cv(job_title, cv)
 
-
-@router.get("/")
-def get_all():
-
+@router.get("/", response_model=List[dict])
+def get_all_cvs():
+   
     return DataController.get_all()
 
 
-@router.get("/{id}")
-def get_one(id: int):
+@router.get("/{cv_id}")
+def get_cv_by_id(cv_id: int):
    
-    result = DataController.get_one(id)
-    if not result:
-        raise HTTPException(status_code=404, detail=f"CV with ID {id} not found")
-    return result
+    return DataController.get_one(cv_id)
 
-@router.put("/update/{id}")
+@router.put("/{cv_id}")
 async def update_cv(
-    id: int,
-    job_title: str = Form(None),
-    cv: UploadFile = File(None)
+    request: Request,
+    cv_id: int,
+    job_title: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None)
 ):
+   
+    try:
+       
+        return await DataController.update_cv(request=request, id=cv_id, job_title=job_title, file=file)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"خطأ أثناء التحديث: {str(e)}")
 
-    result = await DataController.update_cv(id, job_title, cv)
-    
-  
-    if isinstance(result, dict) and "error" in result:
-        raise HTTPException(status_code=404, detail=result["error"])
-        
-    return result
 
-@router.delete("/{id}")
-def delete(id: int):
+@router.delete("/{cv_id}")
+def delete_cv(cv_id: int):
   
-    result = DataController.delete(id)
-    
-    if isinstance(result, dict) and "error" in result:
-        raise HTTPException(status_code=404, detail=result["error"])
-        
-    return result
+    return DataController.delete(cv_id)

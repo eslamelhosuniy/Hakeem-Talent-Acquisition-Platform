@@ -1,4 +1,4 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, status, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from controllers.CVController import CVController
@@ -10,12 +10,15 @@ class CVRequest(BaseModel):
     lang: str = "en"
 
 @router.post("/parse")
-def parse_cv_endpoint(payload: CVRequest):
-    controller = CVController()
+def parse_cv_endpoint(request: Request, payload: CVRequest):
+ 
+    controller = CVController(generation_client=request.app.generation_client)
+    
     is_success, signal, data = controller.parse_cv(
         raw_text=payload.text,
         lang=payload.lang
     )
+    
     if is_success:
         return JSONResponse(
             status_code=status.HTTP_200_OK,
