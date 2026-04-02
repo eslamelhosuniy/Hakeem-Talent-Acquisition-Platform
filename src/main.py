@@ -1,12 +1,10 @@
 import sys
 import os
 
-# --- السطرين دول هما "المنقذ" عشان مشكلة الـ ModuleNotFoundError ---
-# بيخلوا بايثون يشوف الفولدرات اللي جنبه (core, controllers, routes) كأنها مكتبات
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
-# ----------------------------------------------------------------
+
 
 from fastapi import FastAPI
 from routes import base

@@ -4,11 +4,10 @@ import stanza
 import logging
 from spacy.pipeline import EntityRuler
 
-# إعداد اللوجر عشان تتابع لو فيه حاجة ناقصة
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# الكلمات اللي بنستبعدها عشان ما تبوظش النتائج
+
 BLACKSET = {"نص", "تحميل", "السيرة الذاتية", "CV", "Resume", "Page"}
 
 class NERController:
@@ -16,7 +15,7 @@ class NERController:
     _nlp_ar = None
 
     def __init__(self):
-        # تحميل الموديلات مرة واحدة فقط (Singleton) لتوفير الرام
+       
         if NERController._nlp_en is None:
             self._initialize_en_model()
         if NERController._nlp_ar is None:
@@ -28,7 +27,7 @@ class NERController:
             logger.info("Loading English Model (en_core_web_lg)...")
             cls._nlp_en = spacy.load("en_core_web_lg")
             
-            # إضافة الـ EntityRuler عشان يلقط الوظائف والمهارات بدقة
+            
             if "entity_ruler" not in cls._nlp_en.pipe_names:
                 ruler = cls._nlp_en.add_pipe("entity_ruler", before="ner")
                 patterns = [
