@@ -1,3 +1,13 @@
+import sys
+import os
+
+# --- السطرين دول هما "المنقذ" عشان مشكلة الـ ModuleNotFoundError ---
+# بيخلوا بايثون يشوف الفولدرات اللي جنبه (core, controllers, routes) كأنها مكتبات
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+# ----------------------------------------------------------------
+
 from fastapi import FastAPI
 from routes import base
 from helpers.config import get_settings
@@ -6,14 +16,16 @@ from stores.vectordb.VectorDBProviderFactory import VectorDBProviderFactory
 from stores.llm.templates.template_parser import TemplateParser
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
+from fastapi.middleware.cors import CORSMiddleware
+
+# استدعاء الروتس الأصلية بتاعتك
 from routes.cv import router as cv_router
 from routes.ner import router as ner_router
-from fastapi.middleware.cors import CORSMiddleware
 from routes.analyze_routes import router as analyze_router
 from routes.match import router as match_router
 from routes.skill import router as skill_router
 from routes.text_extraction import router as text_extraction_router
-from routes.data_routes import router as data_router
+from routes.data_routes import router as data_router # الراوت الجديد بتاعنا
 
 app = FastAPI(
     title="AI Talent Platform",
@@ -33,7 +45,7 @@ app.add_middleware(
 async def startup_span():
     settings = get_settings()
 
-    # PostgreSQL connection
+    # PostgreSQL connection (ملمسناش حاجة هنا)
     postgres_conn = f"postgresql+asyncpg://{settings.POSTGRES_USERNAME}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_MAIN_DATABASE}"
 
     app.db_engine = create_async_engine(postgres_conn)
@@ -44,13 +56,13 @@ async def startup_span():
     llm_provider_factory = LLMProviderFactory(settings)
     vectordb_provider_factory = VectorDBProviderFactory(settings)
 
-    # Generation client (for resume analysis, job matching, NLP)
+    # Generation client
     app.generation_client = llm_provider_factory.create(
         provider=settings.GENERATION_BACKEND
     )
     app.generation_client.set_generation_model(model_id=settings.GENERATION_MODEL_ID)
 
-    # Embedding client (for semantic search)
+    # Embedding client
     app.embedding_client = llm_provider_factory.create(
         provider=settings.EMBEDDING_BACKEND
     )
@@ -59,7 +71,7 @@ async def startup_span():
         embedding_size=settings.EMBEDDING_MODEL_SIZE,
     )
 
-    # Vector DB client (for candidate/job search)
+    # Vector DB client
     app.vectordb_client = vectordb_provider_factory.create(
         provider=settings.VECTOR_DB_BACKEND, embedding_client=app.embedding_client
     )
@@ -80,7 +92,7 @@ async def shutdown_span():
 app.on_event("startup")(startup_span)
 app.on_event("shutdown")(shutdown_span)
 
-# Routes
+# --- تسجيل كل الـ Routes بما فيهم الجديد ---
 app.include_router(base.main_router)
 app.include_router(base.base_router)
 app.include_router(analyze_router)
@@ -89,4 +101,4 @@ app.include_router(ner_router)
 app.include_router(skill_router)
 app.include_router(match_router)
 app.include_router(text_extraction_router)
-app.include_router(data_router)
+app.include_router(data_router) 

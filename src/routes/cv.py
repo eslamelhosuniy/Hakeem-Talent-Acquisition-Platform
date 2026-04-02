@@ -1,27 +1,53 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, status, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from controllers.CVController import CVController
+from controllers.NERController import NERController
+from controllers.data_controller import DataController 
 
 router = APIRouter(prefix="/cv", tags=["CV Parser"])
 
+
+ner_worker = NERController()
+
 class CVRequest(BaseModel):
     text: str
-    lang: str = "en"
+    job_title: str = "General" 
 
 @router.post("/parse")
-def parse_cv_endpoint(payload: CVRequest):
-    controller = CVController()
-    is_success, signal, data = controller.parse_cv(
-        raw_text=payload.text,
-        lang=payload.lang
-    )
-    if is_success:
+async def parse_cv_endpoint(payload: CVRequest): 
+    try:
+        
+        is_success, signal, result = ner_worker.extract_entities(payload.text)
+        
+        if is_success:
+           
+            db_record = await DataController.create_cv(
+                file=None, 
+                job_title=payload.job_title,
+                ner_results=result 
+            )
+
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content={
+                    "status": "success",
+                    "message": "CV parsed and saved to database",
+                    "signal": signal, 
+                    "data": result,
+                    "db_id": db_record.id 
+                }
+            )
+        
         return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={"signal": signal, "data": data}
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "status": "error",
+                "signal": signal, 
+                "error": result
+            }
         )
-    return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        content={"signal": signal, "error": data}
-    )
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"status": "error", "detail": str(e)}
+        )
