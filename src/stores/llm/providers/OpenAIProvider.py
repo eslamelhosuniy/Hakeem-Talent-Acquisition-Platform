@@ -1,11 +1,8 @@
 import logging
-
 from openai import OpenAI
 from ..LLMInterface import LLMInterface
 
-
 logger = logging.getLogger(__name__)
-
 
 class OpenAIProvider(LLMInterface):
     def __init__(
@@ -25,14 +22,21 @@ class OpenAIProvider(LLMInterface):
         self.generation_model_id = None
         self.embedding_model_id = None
         self.embedding_size = None
+        self.client = None
 
-        try:
-            self.client = OpenAI(api_key=self.api_key, base_url=self.api_url)
-        except Exception:
-            logger.exception(
-                "Failed to initialize OpenAI client. AI-powered features will fall back when possible."
+        
+        if not self.api_key or self.api_key.strip() == "":
+            logger.warning(
+                "OpenAI API Key is missing. OpenAI features will be disabled, but server will keep running."
             )
-            self.client = None
+        else:
+            try:
+                self.client = OpenAI(api_key=self.api_key, base_url=self.api_url)
+            except Exception:
+                logger.exception(
+                    "Failed to initialize OpenAI client. AI-powered features will fall back when possible."
+                )
+                self.client = None
 
     def set_generation_model(self, model_id: str):
         self.generation_model_id = model_id
