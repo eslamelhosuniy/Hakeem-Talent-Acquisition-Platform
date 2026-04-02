@@ -1,57 +1,81 @@
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status, Request
-from typing import List, Optional
-try:
-    from controllers.data_controller import DataController
-except ImportError:
-    from src.controllers.data_controller import DataController
+import fitz  # PyMuPDF
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from typing import List
+from controllers.data_controller import DataController
+from controllers.NERController import NERController
 
+
+from models.db_schemes.schemes.cv_schema import CVResponse
 router = APIRouter(
-    prefix="/cvs",
-    tags=["CV Management"]
+    prefix="/data",
+    tags=["CV Data"]
 )
 
+ner_worker = NERController()
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post("/create", response_model=CVResponse)
 async def create_cv(
-    request: Request,
-    job_title: str = Form(...,),
-    file: UploadFile = File(..., )
+    job_title: str = Form(...),
+    cv: UploadFile = File(...)
 ):
-   
     try:
-    
-        return await DataController.create_cv(request=request, job_title=job_title, file=file)
+        # 1. التحقق من نوع الملف
+        if cv.content_type != "application/pdf":
+            raise HTTPException(status_code=400, detail="Only PDF files are supported")
+        
+       
+        pdf_content = await cv.read()
+        text = ""
+        try:
+            with fitz.open(stream=pdf_content, filetype="pdf") as doc:
+                for page in doc:
+                    text += page.get_text()
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"Could not read PDF content: {str(e)}")
+        
+      
+        await cv.seek(0)
+
+      
+        is_success, signal, ner_results = ner_worker.extract_entities(text)
+
+        return await DataController.create_cv(
+            file=cv, 
+            job_title=job_title, 
+            ner_results=ner_results if is_success else None
+        )
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"حدث خطأ أثناء الرفع: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/", response_model=List[dict])
-def get_all_cvs():
-   
+@router.get("/", response_model=List[CVResponse])
+def get_all():
+  
     return DataController.get_all()
 
 
-@router.get("/{cv_id}")
-def get_cv_by_id(cv_id: int):
-   
-    return DataController.get_one(cv_id)
-
-@router.put("/{cv_id}")
-async def update_cv(
-    request: Request,
-    cv_id: int,
-    job_title: Optional[str] = Form(None),
-    file: Optional[UploadFile] = File(None)
-):
-   
-    try:
-       
-        return await DataController.update_cv(request=request, id=cv_id, job_title=job_title, file=file)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"خطأ أثناء التحديث: {str(e)}")
-
-
-@router.delete("/{cv_id}")
-def delete_cv(cv_id: int):
+@router.get("/{id}", response_model=CVResponse)
+def get_one(id: int):
   
-    return DataController.delete(cv_id)
+    result = DataController.get_one(id)
+    if not result:
+        raise HTTPException(status_code=404, detail=f"CV with ID {id} not found")
+    return result
+
+
+@router.get("/search/{query}", response_model=List[CVResponse])
+def search(query: str):
+   
+    return DataController.search_cvs(query)
+
+
+@router.delete("/{id}")
+def delete(id: int):
+   
+    result = DataController.delete(id)
+    
+    if isinstance(result, dict) and "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+        
+    return result

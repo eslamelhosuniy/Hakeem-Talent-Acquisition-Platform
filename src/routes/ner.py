@@ -1,63 +1,42 @@
-from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, Field
-from controllers.NERController import NERController
+from fastapi import APIRouter, status
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from controllers.NERController import NERController 
 
-router = APIRouter(
-    prefix="/ner",
-    tags=["AI Data Extraction"]
-)
+router = APIRouter(prefix="/ner", tags=["NER"])
 
+
+controller = NERController()
 
 class TextInput(BaseModel):
-    text: str = Field(...,)
+    text: str
 
-@router.post("/extract", status_code=status.HTTP_200_OK)
-async def extract_entities(input_data: TextInput):
-   
+@router.post("/extract")
+async def extract_entities(data: TextInput):
     try:
-     
-        result = NERController.process_text(input_data.text)
         
-        if not result:
-            raise HTTPException(
-                status_code=status.HTTP_204_NO_CONTENT, 
-                detail="لم يتم العثور على بيانات"
-            )
-            
-       
-        return {
-            "status": "success",
-            "metadata": {
-                "language": result.get("language"),
-                "engine": "CAMeL + Spacy Hybrid"
-            },
-            "data": {
-                "candidate_profile": {
-                    "full_name": result.get("name"),
-                    "current_job_title": result.get("job_title"),
-                },
-                "contact_info": {
-                    "email": result.get("email"),
-                    "phone": result.get("phone")
-                },
-                "expertise": {
-                    "technical_skills": result.get("skills"),     
-                    "affiliated_organizations": result.get("organizations") 
+        is_success, signal, result = controller.extract_entities(data.text)
+        
+        if is_success:
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content={
+                    "status": "success",
+                    "signal": signal,
+                    "data": result
                 }
+            )
+        
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "status": "error",
+                "signal": signal, 
+                "detail": result
             }
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error during extraction: {str(e)}"
         )
-
-@router.get("/status")
-def check_ai_health():
-   
-    from controllers.NERController import NERController
-    return {
-        "camel_tools_ner": "Active (AraBERT)" if NERController.arabic_ner else "Down",
-        "spacy_core": "Loaded (en_core_web_lg)",
-        "memory_status": "All models in RAM"
-    }
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"status": "error", "detail": str(e)}
+        )

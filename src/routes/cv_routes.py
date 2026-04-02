@@ -1,41 +1,65 @@
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
-
-from controllers.cv_controller import parse_cv_controller
-from helpers.pdf_extractor import extract_text_from_pdf_bytes
-
+from controllers.NERController import NERController
+from controllers.data_controller import DataController 
+import fitz
 
 router = APIRouter(prefix="/cv", tags=["CV Parser"])
 
 
+ner_worker = NERController()
+
 class CVRequest(BaseModel):
     text: str
-    lang: str = "en"
-
+    job_title: str = "General"
 
 @router.post("/parse")
-def parse_cv_endpoint(payload: CVRequest):
-    return parse_cv_controller(
-        raw_text=payload.text,
-        lang=payload.lang,
-    )
+async def parse_cv_text_endpoint(payload: CVRequest):
+   
+    is_success, signal, ner_results = ner_worker.extract_entities(payload.text)
+    
+    if not is_success:
+        raise HTTPException(status_code=400, detail="Failed to parse text")
+
+    result = await DataController.create_cv(file=None, job_title=payload.job_title, ner_results=ner_results)
+    
+    return {"status": "success", "message": "Text parsed and saved", "data": result}
 
 
 @router.post("/parse-file")
 async def parse_cv_file_endpoint(
-    file: UploadFile = File(...),
-    lang: str = "en",
+    job_title: str = Form("General"),
+    cv_file: UploadFile = File(...)
 ):
-    """
-    PDF resume upload endpoint.
-    Extracts text from the uploaded PDF, preprocesses it,
-    and reuses the existing CV parsing controller.
-    """
-    data = await file.read()
-    raw_text = extract_text_from_pdf_bytes(data)
+  
+    try:
+        if cv_file.content_type != "application/pdf":
+            raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
-    return parse_cv_controller(
-        raw_text=raw_text,
-        lang=lang,
-    )
+      
+        pdf_content = await cv_file.read()
+        text = ""
+        with fitz.open(stream=pdf_content, filetype="pdf") as doc:
+            for page in doc:
+                text += page.get_text()
+        
+       
+        await cv_file.seek(0)
 
+        is_success, signal, ner_results = ner_worker.extract_entities(text)
+
+     
+        db_result = await DataController.create_cv(
+            file=cv_file, 
+            job_title=job_title, 
+            ner_results=ner_results if is_success else None
+        )
+
+        return {
+            "status": "success",
+            "message": "CV File analyzed and saved successfully",
+            "database_record": db_result
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -1,1 +1,1 @@
-from models.db_schemes.schemes import RetrievedDocument
+from models.db_schemes.schemes.cv_schema import CVResponse

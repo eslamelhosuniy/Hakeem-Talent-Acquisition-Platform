@@ -1,108 +1,160 @@
 import spacy
 import re
-from camel_tools.ner import NERecognizer
-from camel_tools.tokenizers.word import simple_word_tokenize
+import stanza
+import logging
+from spacy.pipeline import EntityRuler
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+BLACKSET = {"نص", "تحميل", "السيرة الذاتية", "CV", "Resume", "Page"}
 
 class NERController:
-    # تحميل موديل spacy (يفضل md أو lg لدقة أفضل)
-    nlp = spacy.load("en_core_web_lg")
-    
-    try:
-        arabic_ner = NERecognizer.pretrained()
-    except Exception:
-        arabic_ner = None
+    _nlp_en = None
+    _nlp_ar = None
 
-    @staticmethod
-    def process_text(text: str):
-        is_ar = bool(re.search(r"[\u0600-\u06FF]", text))
-        doc = NERController.nlp(text)
-        
-        results = {
-            "name": "Unknown",
-            "email": "Not Found",
-            "phone": "Not Found",
-            "job_title": "Not Specified", 
-            "skills": [],               
-            "organizations": [],
-            "language": "ar" if is_ar else "en"
+    def __init__(self):
+       
+        if NERController._nlp_en is None:
+            self._initialize_en_model()
+        if NERController._nlp_ar is None:
+            self._initialize_ar_model()
+
+    @classmethod
+    def _initialize_en_model(cls):
+        try:
+            logger.info("Loading English Model (en_core_web_lg)...")
+            cls._nlp_en = spacy.load("en_core_web_lg")
+            
+            
+            if "entity_ruler" not in cls._nlp_en.pipe_names:
+                ruler = cls._nlp_en.add_pipe("entity_ruler", before="ner")
+                patterns = [
+                    # الوظائف الإنجليزية
+                    {"label": "JOB_TITLE", "pattern": [{"LOWER": "software", "OP": "?"}, {"LOWER": "engineer"}]},
+                    {"label": "JOB_TITLE", "pattern": [{"LOWER": "full"}, {"LOWER": "stack"}, {"LOWER": "developer"}]},
+                    {"label": "JOB_TITLE", "pattern": [{"LOWER": "frontend"}, {"LOWER": "developer"}]},
+                    {"label": "JOB_TITLE", "pattern": [{"LOWER": "backend"}, {"LOWER": "developer"}]},
+                    {"label": "JOB_TITLE", "pattern": [{"LOWER": "data"}, {"LOWER": "analyst"}]},
+                    {"label": "JOB_TITLE", "pattern": [{"LOWER": "project"}, {"LOWER": "manager"}]},
+                    {"label": "JOB_TITLE", "pattern": [{"LOWER": "accountant"}]},
+                    {"label": "JOB_TITLE", "pattern": [{"LOWER": "designer"}]},
+
+                    
+                    {"label": "SKILL", "pattern": [{"LOWER": "python"}]},
+                    {"label": "SKILL", "pattern": [{"LOWER": "fastapi"}]},
+                    {"label": "SKILL", "pattern": [{"LOWER": "react"}]},
+                    {"label": "SKILL", "pattern": [{"LOWER": "sql"}]},
+                    {"label": "SKILL", "pattern": [{"LOWER": "machine"}, {"LOWER": "learning"}]},
+                    {"label": "SKILL", "pattern": [{"LOWER": "data"}, {"LOWER": "analysis"}]},
+                    {"label": "SKILL", "pattern": [{"LOWER": "project"}, {"LOWER": "management"}]},
+                    {"label": "SKILL", "pattern": [{"LOWER": "accounting"}]},
+                    {"label": "SKILL", "pattern": [{"LOWER": "design"}]},
+
+                ]
+                ruler.add_patterns(patterns)
+        except Exception as e:
+            logger.error(f"Error loading English model: {e}")
+            cls._nlp_en = spacy.load("en_core_web_sm")
+
+    @classmethod
+    def _initialize_ar_model(cls):
+        try:
+            logger.info("Loading Arabic Model (Stanza)...")
+            cls._nlp_ar = stanza.Pipeline("ar", processors='tokenize,ner', use_gpu=False, verbose=False)
+        except Exception as e:
+            logger.error(f"Error loading Arabic model: {e}")
+
+    def _is_arabic(self, text):
+        return bool(re.search(r"[\u0600-\u06FF]", text))
+
+    def _normalize_label(self, label):
+        label_map = {
+            "PERSON": "person", "PER": "person",
+            "ORG": "organization", "GPE": "location",
+            "LOC": "location", "JOB_TITLE": "job_title",
+            "SKILL": "skills", # ده اللي بيخليها تروح لعمود المهارات
+            "FAC": "facility"
+        }
+        return label_map.get(label, label.lower())
+
+    def extract_entities(self, text: str):
+        # القائمة الكاملة للوظائف العربي اللي كانت عندك
+        AR_JOB_KEYWORDS = {
+            "مهندس", "محاسب", "مطور", "مبرمج", "مدير", "محلل", "مصمم", "فني",
+            "مشرف", "مسؤول", "مستشار", "مدرب", "محامي", "طبيب", "معلم",
+            "باحث", "كاتب", "صحفي", "مترجم", "فنان", "موسيقي", "مهندس برمجيات"
+            ,"مهندس بيانات", "مهندس شبكات", "مهندس نظم", "مهندس أمن", "مهندس ذكاء اصطناعي",
+            "مهندس تعلم آلي", "مهندس روبوتات", "مهندس إلكترونيات", "مهندس ميكانيكا",
+            "مهندس كهرباء", "مهندس مدني", "مهندس معماري", "مهندس صناعي", "مهندس بيئة",
+            "مهندس طيران", "مهندس فضاء", "مهندس بحري", "مهندس زراعي", "مهندس غذاء",
+            "مهندس نفط", "مهندس غاز", "مهندس طاقة", "مهندس صوت", "مهندس فيديو",
+            "مهندس جودة", "مهندس صيانة", "مهندس دعم فني", "مهندس مبيعات", "مهندس تسويق",
+            "مهندس موارد بشرية", "مهندس مالي", "مهندس قانوني", "مهندس صحي", "مهندس تعليمي",
+            "مهندس أبحاث", "مهندس تطوير أعمال", "مهندس علاقات عامة", "مهندس لوجستي",
+            "مهندس إنتاج", "مهندس تخطيط", "مهندس استشارات", "مهندس تدريب", "مهندس توظيف", "مهندس خدمات العملاء", "مهندس أمن معلومات",
+            "مهندس بيانات كبيرة", "مهندس سحابة", "مهندس إنترنت الأشياء", "مهندس واقع افتراضي",
+            "مهندس واقع معزز", "مهندس بلوكتشين", "مهندس عملات رقمية", "مهندس تكنولوجيا مالية",
+            "مهندس رعاية صحية", "مهندس تعليم إلكتروني", "مهندس ألعاب", "مهندس ترفيه", "مهندس سفر وسياحة", "مهندس ضيافة", "مهندس رياضي", "مهندس إعلامي",
+            "مهندس بيئي", "مهندس زراعي", "مهندس غذائي", "مهندس نفطي", "مهندس غازي",
+            "مهندس طاقة متجددة", "مهندس طاقة نووية", "مهندس طاقة شمسية", "مهندس طاقة رياح", "مهندس طاقة مائية", "مهندس طاقة حرارية",
+            "مهندس طاقة حيوية", "مهندس طاقة جيوحرارية", "مهندس طاقة مد والجزر", "مهندس طاقة موجية", "مهندس طاقة كهرومائية",
+            "مهندس طاقة نووية صغيرة", "مهندس طاقة نووية كبيرة", "مهندس طاقة نووية متنقلة", "مهندس طاقة نووية ثابتة",
+            "مهندس طاقة نووية متجددة", "مهندس طاقة نووية غير متجددة", "مهندس طاقة نووية هجينة", "مهندس طاقة نووية تقليدية",
+            "مهندس طاقة نووية مستقبلية", "مهندس طاقة نووية مستدامة", "مهندس طاقة نووية متطورة", "مهندس طاقة نووية مبتكرة",
+            "مهندس طاقة نووية تقليدية", "مهندس طاقة نووية مستقبلية", "مهندس طاقة نووية مستدامة", "مهندس طاقة نووية متطورة", "مهندس طاقة نووية مبتكرة",
+
         }
 
-        # 1. استخراج الإيميل والتليفون أولاً (Regex)
-        email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
-        phone_pattern = r'(\+?\d{10,15})'
-        
-        emails = re.findall(email_pattern, text)
-        phones = re.findall(phone_pattern, text)
-        
-        results["email"] = emails[0] if emails else "Not Found"
-        results["phone"] = phones[0] if phones else "Not Found"
+        try:
+            if not text or len(text.strip()) < 2:
+                return False, "text_too_short", "Text is too short"
 
-        # كلمات يجب تجاهلها تماماً من المنظمات والمهارات
-        noise_words = [
-            "فرع", "دبي", "مصر", "شركة", "أمتلك", "خبرة", "كبيرة", "إلى", "بالإضافة", 
-            "الـ", "في", "من", "على", "Contact", "Email", "Phone", "About", "Experience"
-        ]
-
-        # 2. استخراج الأسماء والمنظمات (العربي - CamelTools)
-        arabic_names = []
-        if is_ar and NERController.arabic_ner:
-            tokens = simple_word_tokenize(text)
-            labels = NERController.arabic_ner.predict([tokens])[0]
+            language = "ar" if self._is_arabic(text) else "en"
             
-            for token, label in zip(tokens, labels):
-                if label in ['B-PERS', 'I-PERS']:
-                    arabic_names.append(token)
-                elif label in ['B-ORG', 'I-ORG'] and token not in noise_words:
-                    if len(token) > 2:
-                        results["organizations"].append(token)
             
-            if arabic_names:
-                results["name"] = " ".join(arabic_names)
+            raw_entities = {
+                "email": list(set(re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text))),
+                "phone": list(set(re.findall(r'(\+?\d{10,15})', text)))
+            }
 
-        # 3. استخراج البيانات (الإنجليزي - Spacy)
-        english_names = []
-        for ent in doc.ents:
-            if ent.label_ == "PERSON" and results["name"] == "Unknown":
-                english_names.append(ent.text)
-            elif ent.label_ == "ORG" and ent.text not in noise_words:
-                results["organizations"].append(ent.text)
-
-        if not is_ar and english_names:
-            results["name"] = english_names[0]
-
-        # 4. استخراج المسمى الوظيفي والمهارات (Logic-based)
-        job_keywords = ["Engineer", "Developer", "Manager", "Analyst", "مهندس", "مطور", "مدير", "محلل", "برمجيات"]
-        
-        # قائمة "بيضاء" للمهارات التقنية الشائعة لتقليل العشوائية
-        tech_whitelist = ["python", "java", "sql", "fastapi", "react", "node", "docker", "aws", "git", "php", "c++"]
-
-        for token in doc:
-            word = token.text.strip()
-            word_lower = word.lower()
-
-            # أ. المسمى الوظيفي
-            if any(j.lower() in word_lower for j in job_keywords) and len(word) > 3:
-                if results["job_title"] == "Not Specified":
-                    results["job_title"] = word
-                elif word not in results["job_title"]:
-                    results["job_title"] += f" {word}"
-
-            # ب. المهارات (تحسين الفلترة)
-            # الشروط: ليس اسم الشخص، ليس إيميل، ليس منظمة، ليس كلمة ضوضاء
-            if (token.pos_ in ["PROPN", "NOUN"]) and (word not in noise_words):
-                if word in results["name"] or word in results["email"] or word in results["organizations"]:
-                    continue
+            if language == "ar" and self._nlp_ar:
+                doc = self._nlp_ar(text)
+                for sent in doc.sentences:
+                    for ent in sent.ents:
+                        label = self._normalize_label(ent.type)
+                        val = ent.text.strip()
+                        if val not in BLACKSET:
+                            if label not in raw_entities: raw_entities[label] = []
+                            if val not in raw_entities[label]: raw_entities[label].append(val)
                 
-                # إضافة المهارة لو كانت في الـ whitelist أو لو الموديل ملقهاش تصنيف شخص/منظمة
-                if word_lower in tech_whitelist or (len(word) > 2 and not token.ent_type_):
-                    if not any(char in word for char in ['@', '.', '+']): # منع الإيميلات والرموز
-                        results["skills"].append(word)
+             
+                for keyword in AR_JOB_KEYWORDS:
+                    if keyword in text:
+                        if "job_title" not in raw_entities: raw_entities["job_title"] = []
+                        if keyword not in raw_entities["job_title"]: raw_entities["job_title"].append(keyword)
 
-        # 5. تنظيف وتكرار
-        results["skills"] = list(dict.fromkeys(results["skills"]))[:15] # زيادة العدد قليلاً
-        results["organizations"] = list(dict.fromkeys(results["organizations"]))
-        
-        # فلترة أخيرة للمنظمات: لو الكلمة جزء من الاسم متبقاش منظمة
-        results["organizations"] = [o for o in results["organizations"] if o not in results["name"] and o not in noise_words]
+            else: # English
+                if self._nlp_en:
+                    doc = self._nlp_en(text)
+                    for ent in doc.ents:
+                        label = self._normalize_label(ent.label_)
+                        val = ent.text.strip()
+                        if val not in BLACKSET:
+                            if label not in raw_entities: raw_entities[label] = []
+                            if val not in raw_entities[label]: raw_entities[label].append(val)
 
-        return results
+           
+            final_entities = {k: v for k, v in raw_entities.items() if v}
+            
+            result = {
+                "language": language,
+                "entities": final_entities,
+                "total_entities": sum(len(v) for v in final_entities.values())
+            }
+            return True, "success", result
+
+        except Exception as e:
+            logger.error(f"Critical NER Error: {e}")
+            return False, "system_error", str(e)
