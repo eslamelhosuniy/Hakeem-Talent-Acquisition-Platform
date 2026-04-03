@@ -44,13 +44,13 @@ stanza==1.8.1
 sentence-transformers==2.6.1
 transformers==4.38.2
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.1.0+cpu
+torch==2.1.0
 
 # ---- Utilities ----
 # تحديد نسخة Protobuf لحل تعارضات المكتبات القديمة
 protobuf>=3.20.2,<5.0.0
 # ---- Models (يفضل تحميلها عبر الأوامر وليس الملف مباشرة) ----
-# en_core_web_lg==3.7.1  <-- دي بتتحمل بأمر python -m spacy download
+# en_core_web_sm==3.7.1  <-- دي بتتحمل بأمر python -m spacy download
 
 # ---- Excel Processing (Bonus) ----
 openpyxl==3.1.2
